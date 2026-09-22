@@ -1,0 +1,16 @@
+# Receiver
+fastapi>=0.115
+uvicorn[standard]>=0.32
+python-dotenv>=1.0
+
+# Transcription. faster-whisper bundles Silero VAD and word timestamps, which is
+# why it was picked over whisper.cpp — see docs/PLAN_REVIEW.md section 3.2.
+# Verify a CTranslate2 aarch64 wheel exists for this Pi's Python version; if not,
+# fall back to whisper.cpp.
+faster-whisper>=1.0.3
+
+# Local LLM Q&A over transcripts (Ollama runs as a separate service)
+httpx>=0.27
+
+# Search UI
+jinja2>=3.1

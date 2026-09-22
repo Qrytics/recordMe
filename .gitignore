@@ -1,0 +1,36 @@
+# secrets — never commit
+firmware/recordme/secrets.h
+pi/.env
+
+# data — lives on the HDD, never in the repo
+*.db
+*.db-wal
+*.db-shm
+audio/
+*.wav
+*.flac
+
+# firmware build artifacts
+firmware/build/
+*.bin
+*.elf
+*.map
+
+# whisper models
+models/
+*.gguf
+*.bin.tmp
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# os / editor
+.DS_Store
+.vscode/
+.idea/
