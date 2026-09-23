@@ -1,0 +1,5 @@
+# Dev/test only — deliberately separate from requirements.txt so the Pi runtime
+# install stays lean. The test suite uses a fake Whisper model, so it does not
+# need faster-whisper installed at all (see tests/test_transcribe.py).
+-r requirements.txt
+pytest>=8.0

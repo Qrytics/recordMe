@@ -262,19 +262,31 @@ Companion docs:
 - `firmware/README.md` — build/flash commands, pinout, where to start.
 - `pi/README.md` — services and bind addresses, setup, storage split, transcription notes.
 
-Current state: scaffolded, nothing implemented. `firmware/recordme/` has `config.h` (real pin and
-audio constants), `partitions.csv` (verified arithmetic), and a `recordme.ino` skeleton with the
-state machine mapped and function bodies stubbed. `pi/` has `schema.sql` (validated against SQLite —
-FTS triggers and stemming confirmed working) and stub modules with documented contracts.
+Current state: **Pi side implemented (step 4); firmware step 1 written but never run.**
+
+- `pi/` is working code: receiver, transcription worker, keyword search, and the DB layer, with
+  121 tests in `pi/tests/` (a fake Whisper model, so the suite needs no ML deps). Proven
+  end-to-end over real HTTP — upload → faster-whisper + Silero VAD → SQLite → search. Also
+  `pi/bench_whisper.py`, which has **not** yet been run on the actual Pi; the model choice is
+  therefore still unmeasured. `schema.sql` is unchanged and validated.
+- `firmware/recordme/` has step 1 implemented: `audio.cpp` (I2S capture — 32-bit slots, stereo
+  frame, software slot select) and `bench.cpp` (PSRAM check, serial level meter, raw PCM dump,
+  runtime gain/slot keys), plus `tools/serial_to_wav.py`. It **compiles** against arduino-cli 1.5.2
+  / esp32 core 3.3.11 and **has never run on hardware — no measurements exist yet.** The rest is
+  still scaffold: `recordme.ino`'s state machine is mapped with buffering, upload, and power
+  sensing stubbed, and `partitions.csv` arithmetic is verified but LittleFS is unused so far.
+
+Note for `pi/` code: annotations use `Optional[...]` rather than `X | None` on purpose, so the
+modules import on Python 3.9 dev machines as well as the Pi's 3.11. See `BUILD_LOG.md` 2026-09-23.
 
 ## 11. Build order and status
 
 | # | Step | Status |
 |---|---|---|
-| 1 | Bench wiring: mic → XIAO I2S, battery (polarity checked), switch. Prove I2S capture over USB serial | not started |
+| 1 | Bench wiring: mic → XIAO I2S, battery (polarity checked), switch. Prove I2S capture over USB serial | **firmware written and compiling** (`audio.cpp`, `bench.cpp`); not yet wired or run, so `SAMPLE_SHIFT` and the mic's slot are still unmeasured |
 | 2 | Power: measure real current draw; runtime test toward 8 h | not started |
 | 3 | Firmware: PSRAM buffering + chunking + burst upload to a test endpoint | not started |
-| 4 | Pi pipeline: receiver → VAD → Whisper → SQLite → keyword search | not started |
+| 4 | Pi pipeline: receiver → VAD → Whisper → SQLite → keyword search | **implemented**, 121 tests, proven end-to-end on a dev machine; Whisper not yet benchmarked on the Pi |
 | 5 | Enclosure: fabricate to `hardware/FORM_FACTOR.md`, mic port, USB-C and switch cutouts, clip mount; re-test audio in case | not started |
 | 6 | Field test: wear at the chosen mount point, clarity at speaking distance, full-day battery and upload reliability | not started |
 | 7 | Search UI: local-LLM Q&A over transcripts | not started |
