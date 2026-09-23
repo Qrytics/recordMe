@@ -1,7 +1,8 @@
 # Pi server
 
-Runs on the Raspberry Pi 5 (16 GB, active cooler, 2 TB USB HDD). **Scaffold only so far** —
-structure, config, and schema are in place; the implementations aren't.
+Runs on the Raspberry Pi 5 (16 GB, active cooler, 2 TB USB HDD). **Implemented** — receiver,
+transcription worker, and keyword search all work and are covered by tests. LLM Q&A (`/ask`) is
+still build step 7 and returns 501.
 
 ## Services
 
@@ -27,6 +28,8 @@ recordme/
   transcribe.py   worker: pending chunks -> VAD -> Whisper -> DB
   search.py       FastAPI keyword search + LLM Q&A (tunnel-facing)
 schema.sql        tables, FTS5 index, triggers
+bench_whisper.py  measure a model on the host it will run on
+tests/            pytest suite; uses a fake Whisper model, no ML deps needed
 .env.example      copy to .env and fill in
 ```
 
@@ -36,11 +39,74 @@ schema.sql        tables, FTS5 index, triggers
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env    # then fill it in
-sqlite3 "$RECORDME_DB_PATH" < schema.sql
 ```
 
-Run the receiver and search app with uvicorn, and `transcribe` as a plain worker. All three want
-systemd units with `Restart=always` once they work.
+`schema.sql` is applied automatically by `db.connect()` on first use, so there's no manual
+`sqlite3 < schema.sql` step.
+
+## Running
+
+```bash
+uvicorn recordme.receiver:app --host 0.0.0.0 --port 8000   # LAN only
+uvicorn recordme.search:app   --host 127.0.0.1 --port 8001 # tunnel + localhost only
+python -m recordme.transcribe                              # worker, no socket
+```
+
+Those two bind addresses are the security model, not a default — see the table above. All three
+want systemd units with `Restart=always`.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q          # 121 tests, ~1 s, no hardware and no Whisper model required
+```
+
+The suite injects a fake Whisper model, so it runs anywhere. It leans on the guarantees that
+actually matter: replay idempotency, gap detection *and* healing, the atomic claim, crash
+recovery, and that one poison chunk can't wedge the queue.
+
+## Benchmark
+
+Model choice is still an estimate until this runs on the Pi (`docs/PLAN_REVIEW.md` §3.1). It needs
+no hardware and nothing else from the build — only the Pi itself.
+
+Paste-ready, from scratch on the Pi (`qrytics@marioServer`):
+
+```bash
+git clone <this repo> recordme && cd recordme/pi     # or git pull
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt                       # watch for the CTranslate2 wheel
+
+# A WAV with real speech in it — a tone measures nothing. Either record one:
+arecord -f S16_LE -r 16000 -c 1 -d 60 sample.wav
+# ...or generate one on a Mac and scp it over:
+#   say -o sample.wav --data-format=LEI16@16000 -f some-paragraph.txt
+
+python3 bench_whisper.py --audio sample.wav \
+  --models small.en,large-v3-turbo --threads 4 --json bench.json
+```
+
+A minute or more of continuous speech matters — on a three-second clip, warm-up dominates and the
+realtime figure is meaningless.
+
+What the output decides:
+
+- **`small.en` at comfortably over 1× realtime** → the plan stands as written.
+- **`large-v3-turbo` also over ~0.5×** → it clears a day's speech overnight, so it's a live
+  accuracy upgrade (`PLAN_REVIEW.md` §3.1) rather than a theoretical one.
+- **CTranslate2 fails to import** → no aarch64 wheel for that Python; fall back to whisper.cpp
+  (`PLAN_REVIEW.md` §3.2). The script reports this explicitly instead of failing obscurely.
+
+Log the real numbers in `BUILD_LOG.md` — the comparison to beat is `~13 min/day at 7.59×` from
+tiny.en on a dev Mac, which is a script smoke test, not a result.
+
+## Typing note
+
+Annotations avoid `X | None` in favour of `Optional[...]`. The Pi's Python 3.11 is fine either
+way, but 3.9 dev machines evaluate annotations at definition time and fail to import — and
+`from __future__ import annotations` does not help FastAPI routes, which resolve them via
+`get_type_hints`.
 
 ## Storage split
 
