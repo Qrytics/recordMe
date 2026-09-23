@@ -27,8 +27,22 @@
 // put SCK at exactly the 512 kHz minimum.
 // The mic is 24-bit and quiet, so samples need a right-shift plus gain. Start
 // here and tune against real speech — expect to adjust.
+// SAMPLE_SHIFT is applied to the whole 32-bit I2S word: out = word >> SAMPLE_SHIFT.
+// So 16 is unity gain (the top 16 bits of the 24-bit sample) and every step down is
+// +6 dB. 11 is therefore 32x. It is only a starting guess — the bench prints the
+// shift it measures as correct, and `+`/`-` over serial change it live.
 #define SAMPLE_SHIFT     11     // TUNE: 32-bit word -> 16-bit sample
 #define BYTES_PER_SECOND (SAMPLE_RATE_HZ * (SAMPLE_BITS / 8) * AUDIO_CHANNELS)  // 32000
+
+// Which 32-bit slot of the stereo frame carries the mic. L/R tied to GND means
+// left (0), but "left only" has historically returned the right channel on some
+// IDF versions, so we capture both slots and pick here — and the bench meters both
+// so the answer is measured, not assumed. `l`/`r` switch it live.
+#define AUDIO_SLOT       0      // 0 = left, 1 = right
+#define AUDIO_READ_FRAMES 512   // scratch frames per i2s_channel_read (4 KB, internal RAM)
+#define I2S_READ_TIMEOUT_MS 200
+#define I2S_DMA_DESC_NUM  8     // 8 x 256 frames = 128 ms of DMA cushion
+#define I2S_DMA_FRAME_NUM 256
 
 // ---------------------------------------------------------------- buffering
 // Primary buffer is PSRAM. Flash (LittleFS, ~4.875 MB) is overflow only, for when
@@ -49,6 +63,19 @@
 #define VBAT_LOW_MV          3500    // warn
 #define VBAT_CRITICAL_MV     3300    // stop recording, flush, park
 #define VBUS_PRESENT_MV      4000    // above this on the 5V pad -> charging
+
+// ---------------------------------------------------------------- bench (step 1)
+// With BENCH_AUDIO set, the sketch skips the state machine and runs the serial audio
+// bench instead: PSRAM check, live level meter, and raw PCM dump. Set it to 0 once
+// step 1 is signed off and the recording path is being built.
+#define BENCH_AUDIO             1
+#define SERIAL_BAUD             115200  // ignored by USB CDC, which runs at USB speed
+#define BENCH_REPORT_MS         1000    // one level line per second
+#define BENCH_DUMP_MAX_SECONDS  120     // auto-stop a raw dump, so it can't run away
+// Start dumping raw PCM immediately at boot. Set to 1 when capturing with a plain
+// `cat > dump.bin`, which gives you nowhere to type `d` — start the capture, then press
+// RESET on the board and the dump begins with the capture already running.
+#define BENCH_DUMP_ON_BOOT      0
 
 // ---------------------------------------------------------------- network
 #define WIFI_CONNECT_TIMEOUT_MS  15000

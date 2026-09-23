@@ -65,9 +65,12 @@ across BAT+/BAT− is the fix — that's a BOM addition, so ask first.
 - **32-bit I2S slots, not 16.** The INMP441 needs SCK between 512 kHz and 4.096 MHz. At 16 kHz with
   32-bit slots, SCK is 1.024 MHz ✓. 16-bit slots would sit exactly on the 512 kHz minimum.
 - **The mic is quiet.** It's a 24-bit part at −26 dBFS sensitivity, so samples need a right-shift
-  plus software gain. `SAMPLE_SHIFT` in `config.h` starts at 11 — tune it against real speech.
+  plus software gain. `SAMPLE_SHIFT` in `config.h` starts at 11 — tune it against real speech. The
+  serial bench prints the shift it measures as correct and lets you change it live with `+`/`-`, so
+  this needs no reflashing: procedure in `firmware/README.md`.
 - **Verify which slot you actually get.** Some ESP-IDF versions have returned the right channel when
-  configured for left-only. Test with a known signal instead of trusting the enum.
+  configured for left-only. Test with a known signal instead of trusting the enum — the bench meters
+  both slots at once so you can just read which one the mic is on.
 - **The INMP441 is a bottom-port mic** — on the usual breakout, the acoustic hole goes *through the
   PCB*, on the opposite face from the chip. Confirm which side before deciding board orientation in
   the case. A sealed-in mic hears nothing.

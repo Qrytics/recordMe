@@ -8,6 +8,70 @@ error messages; don't summarize them away.
 
 ---
 
+## 2026-09-23 — step 1 firmware: I2S capture + serial bench (written, NOT yet run)
+
+**Goal:** write the step-1 firmware ahead of the bench session, so that finding `SAMPLE_SHIFT` —
+the riskiest firmware unknown — is wire, flash once, read numbers, instead of a reflash per guess.
+
+**Status, stated plainly: this has never run on hardware. Zero measurements.** It compiles, and
+the arithmetic is verified on the host. Nothing else about it is proven.
+
+**Toolchain:** no Homebrew on this Mac, so arduino-cli came from the official
+`arduino-cli_latest_macOS_ARM64.tar.gz` into `~/.local/bin`. **arduino-cli 1.5.2, esp32 core
+3.3.11** (IDF 5.x, so `driver/i2s_std.h` is present as the plan assumed). Compile is clean at
+`--warnings all` except a pre-existing `chunk_seq defined but not used` from the scaffold, which
+step 3 will use. Sketch: 301,635 bytes (9% of the 3 MB app partition), 27,548 bytes of static RAM.
+
+**Written:**
+
+- `audio.cpp` — I2S std mode, master, RX only, 32-bit slots. Deliberately **stereo frame with
+  software slot selection** rather than `I2S_SLOT_MODE_MONO`: it costs 128 KB/s of DMA (nothing)
+  and sidesteps the documented risk that the mono `slot_mask` returns the wrong channel. The bench
+  meters *both* slots, so which one the mic is on becomes a measurement instead of a hope.
+- `bench.cpp` — PSRAM check, per-second level meter, raw PCM dump, runtime keys (`+`/`-` gain,
+  `l`/`r` slot, `d` dump). Statistics are kept in the raw 24-bit domain, so they stay valid when
+  the gain is changed mid-session.
+- `firmware/tools/serial_to_wav.py` — stdlib-only converter for the dump. Round-trip tested
+  against a synthetic capture (boot text + header + 1 s sine + end marker + trailing text):
+  output is **bit-identical** to the source PCM, and the truncated-dump, multi-dump, stdin, and
+  no-marker paths all behave.
+
+**Findings:**
+
+- **The gain formula is exact, and checked.** The bench suggests `shift = bitlen(peak24) - 7` to
+  land peaks at −6 dBFS. Verified numerically across the full range 2^6..2^23: every level lands
+  at exactly −6.0 dBFS with no clipping. This mattered enough to test because an off-by-one here
+  would send the whole bench session chasing the wrong value.
+- **Prediction to falsify at the bench: `SAMPLE_SHIFT 11` is probably 2–3 too high.** From the
+  INMP441 datasheet (−26 dBFS at 94 dB SPL, full scale 2^23), normal speech at 30 cm (~70 dB SPL)
+  computes to a raw peak of ~26,500, which wants `shift=8`; at shift 11 it would sit around
+  −20 dBFS. Left the default at 11 anyway — the measurement decides, not the datasheet.
+- **PSRAM check allocates the real 6 MB `PSRAM_BUFFER_BYTES`**, pattern-tests it, and reports
+  write bandwidth. "PSRAM is enabled" is the assumption the entire buffering design rests on, so
+  it gets tested rather than trusted.
+- **Pre-existing partition-table warning, not fixed here:** `gen_esp32part.py` says
+  `Partition has name 'littlefs' ... type 0x1 subtype 0x82. Mistake in partition table?` The
+  subtype is SPIFFS while the label says littlefs. Harmless today, but note that Arduino's
+  `LittleFS.begin()` defaults to the partition **labelled `spiffs`**, so as written it will not
+  find this partition without an explicit label argument. That's a step-3 problem; flagging it
+  now rather than rediscovering it then. Left `partitions.csv` alone — the arithmetic is right and
+  changing it isn't part of step 1.
+- USB CDC dump is 32 KB/s, which the S3's native USB carries, but a slow host silently creates
+  gaps. The firmware times the dump and reports its realtime ratio at stop, so dropouts get
+  attributed to USB rather than to the mic.
+- **Caught a hole in the dump workflow while documenting it:** the capture has to be running
+  before the header is emitted, so "press `d` in the monitor, then `cat` the port" loses the
+  header and the converter finds nothing. Two working routes instead — write `d` to the port from
+  a second terminal while `cat` runs, or set `BENCH_DUMP_ON_BOOT` and press RESET with the capture
+  already open. The second exists because opening the port from a second process may reset the
+  board (USB-Serial-JTAG resets on some DTR/RTS sequences). Untested either way.
+
+**Next (at the bench, in this order):** tap test → confirm slot L vs R → read `suggest shift` at
+real speaking distance → set `SAMPLE_SHIFT` in `config.h` and log the measured numbers here →
+dump and listen. Then the Pi-side `small.en` benchmark, which is still unmeasured.
+
+---
+
 ## 2026-09-23 — step 4: Pi pipeline implemented and proven end-to-end
 
 **Goal:** implement the Pi side (receiver → VAD → Whisper → SQLite → keyword search) and prove it
